@@ -1,0 +1,33 @@
+# Maintainer: Nicolai VdS <nicolai@nvds.be>
+
+pkgname=solidcraft-bin
+_pkgname=${pkgname%-bin}
+pkgver=0.18.2
+pkgrel=1
+pkgdesc='Open-source parametric 3D CAD application built in pure Rust (binary release)'
+arch=(x86_64 aarch64)
+url='https://github.com/tangency-labs/solidcraft'
+license=('MIT OR Apache-2.0')
+# The binaries link only glibc and libgcc_s; windowing, GPU and D-Bus libraries are dlopen'ed at
+# runtime, so list them by hand (mirrors upstream's packaging/linux/nfpm.yaml).
+depends=(glibc libgcc hicolor-icon-theme
+         dbus libglvnd vulkan-icd-loader wayland
+         libx11 libxcb libxcursor libxi libxkbcommon libxkbcommon-x11 libxrandr)
+optdepends=('vulkan-driver: Vulkan rendering (falls back to OpenGL/EGL without one)'
+            'xdg-desktop-portal: native file dialogs')
+provides=("$_pkgname=$pkgver" solvecraft)
+conflicts=("$_pkgname" solvecraft)
+options=(!strip !debug)
+_src="$url/releases/download/v$pkgver/$_pkgname-$pkgver-linux"
+source_x86_64=("$_src-x86_64.tar.gz")
+source_aarch64=("$_src-aarch64.tar.gz")
+sha256sums_x86_64=('9d0c922ac72204f34ad22ca7a171be78016ab002e304ace3c07d34d187d830ff')
+sha256sums_aarch64=('d07eaed0ef4fc2feed7ee66837894d8b00135ea7de6fdf6a71c67975a583b0c3')
+
+package() {
+  cd "$_pkgname-$pkgver-linux-$CARCH"
+  # The tarball is already an FHS tree (bin/, share/); plain cp -r so files end up root-owned.
+  install -d "$pkgdir/usr"
+  cp -r bin share "$pkgdir/usr/"
+  install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" share/doc/$_pkgname/{LICENSE-MIT,LICENSE-APACHE,NOTICE}
+}

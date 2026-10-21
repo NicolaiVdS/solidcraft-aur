@@ -1,0 +1,53 @@
+# Hourly: bump solidcraft-bin to the latest stable release. On every run (and every push to main):
+# mirror both packages' PKGBUILD and .SRCINFO to the AUR. Needs the AUR_SSH_KEY secret: a private
+# key whose public half is registered on your AUR account.
+name: AUR
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: aur
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the AUR commit reuses the last message that touched each package
+
+      - name: Set up git and AUR SSH
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          git config --global user.name 'Nicolai VdS'
+          git config --global user.email nicolai@nvds.be
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur && chmod 600 ~/.ssh/aur
+          # AUR's published ed25519 host key (SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4).
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' >> ~/.ssh/known_hosts
+          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n' >> ~/.ssh/config
+
+      - name: Bump solidcraft-bin
+        run: ./update-bin.sh solidcraft-bin && git push
+
+      - name: Deploy to the AUR
+        run: |
+          for pkg in solidcraft-bin solidcraft-git; do
+            git clone -q "ssh://aur@aur.archlinux.org/$pkg.git" "$RUNNER_TEMP/$pkg"
+            cp "$pkg/PKGBUILD" "$pkg/.SRCINFO" "$RUNNER_TEMP/$pkg/"
+            cd "$RUNNER_TEMP/$pkg"
+            git add PKGBUILD .SRCINFO
+            if ! git diff --cached --quiet; then
+              git commit -qm "$(git -C "$GITHUB_WORKSPACE" log -1 --format=%s -- "$pkg")"
+              git push -q origin HEAD:master
+            fi
+            cd "$GITHUB_WORKSPACE"
+          done

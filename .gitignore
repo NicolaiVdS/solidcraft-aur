@@ -1,0 +1,6 @@
+# makepkg leftovers when building in place
+*/src/
+*/pkg/
+*.pkg.tar.*
+*.tar.gz
+solidcraft-git/solidcraft/

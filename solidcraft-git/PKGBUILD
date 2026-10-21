@@ -1,0 +1,61 @@
+# Maintainer: Nicolai VdS <nicolai@nvds.be>
+
+pkgname=solidcraft-git
+_pkgname=${pkgname%-git}
+pkgver=0.18.2.r1870.gff8b09c
+pkgrel=1
+pkgdesc='Open-source parametric 3D CAD application built in pure Rust (git main)'
+arch=(x86_64 aarch64)
+url='https://github.com/tangency-labs/solidcraft'
+license=('MIT OR Apache-2.0')
+# Windowing, GPU and D-Bus libraries are dlopen'ed at runtime, so list them by hand
+# (mirrors upstream's packaging/linux/nfpm.yaml).
+depends=(glibc libgcc hicolor-icon-theme
+         dbus libglvnd vulkan-icd-loader wayland
+         libx11 libxcb libxcursor libxi libxkbcommon libxkbcommon-x11 libxrandr)
+makedepends=(cargo git)
+optdepends=('vulkan-driver: Vulkan rendering (falls back to OpenGL/EGL without one)'
+            'xdg-desktop-portal: native file dialogs')
+provides=("$_pkgname=$pkgver" solvecraft)
+conflicts=("$_pkgname" solvecraft)
+# ring and zstd-sys compile C through cc; with makepkg's -flto=auto that becomes GCC LTO bitcode,
+# which rust-lld (rustc's default linker) can't read: undefined symbols.
+options=(!lto)
+source=("git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_pkgname"
+  # Stable tags live on release branches, not main, so git describe can't be used: take the
+  # [workspace.package] version and count main's commits instead.
+  printf '%s.r%s.g%s' \
+    "$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)" \
+    "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "$_pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd "$_pkgname"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p solidcraft -p solidcraft-cli
+}
+
+package() {
+  cd "$_pkgname"
+  # Same layout as upstream's packaging/linux/package.sh.
+  local id=ai.storyteller.solidcraft linux=assets/platforms/linux
+  install -Dm755 -t "$pkgdir/usr/bin" target/release/{solidcraft,solidcraft-cli,solvecraft-cli}
+  install -Dm644 -t "$pkgdir/usr/share/applications" "$linux/$id.desktop"
+  install -Dm644 "$linux/$id.mime.xml" "$pkgdir/usr/share/mime/packages/$id.xml"
+  install -d "$pkgdir/usr/share/metainfo" "$pkgdir/usr/share/icons"
+  sed -e "s/@VERSION@/${pkgver%%.r*}/" -e "s/@DATE@/$(date -u -d "@$SOURCE_DATE_EPOCH" +%F)/" \
+    "$linux/$id.metainfo.xml.in" > "$pkgdir/usr/share/metainfo/$id.metainfo.xml"
+  cp -r assets/icons/app/linux/exports/hicolor "$pkgdir/usr/share/icons/"
+  install -Dm644 -t "$pkgdir/usr/share/doc/$_pkgname" README.md THIRD-PARTY-LICENSES.txt
+  install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" LICENSE-MIT LICENSE-APACHE NOTICE
+}
